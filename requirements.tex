@@ -1,0 +1,27 @@
+/section{Requirements}
+
+/subsection{Domain}
+
+After I spent several days learning about Ruby, I have began working on projects I was required to do for the internship.
+
+Because I was interested in developing programming language in the future, I eventually decided to work on a type checking concept I have been thinking about for a long time.  This type checking system is based on the mathematical concept of domain.  In mathematics, domain is a set of values the function can properly map.  In other words, if the value is part of a domain's set, then the function can use that value.  Since the function in computer science is similar to the functions in mathematics (hence the same name), it is not far-fetched to think that domains in mathematics can also be applied to the functions in computer science.  With this in mind, take a look at functions in statically typed languages:
+
+\begin{lstlisting}[language=C++, caption={Domain example}]
+int func(int x, int y) {
+    return x + y;
+}
+\end{lstlisting}
+
+Notice how the arguments are restricted.  Both arguments x and y require the int type.  This can be interpreted as a form of domain, as it restricts the input to certain set of values.  It is also the set of values the function is expected to work. which matches the definition of the domain nicely.  Although the functions in statically typed languages contain similar quality as domains in mathematics, it is not very flexible.  The arguments can only restrict based on the types of the value, even though there can be multiple ways to restrict them.  For example, what if you needed a value that is specifically a String that contains an integer?  What if the function should only accept values from 0 to 500?  It is possible to impose such rules using if statements within function:
+
+\begin{lstlisting}[language=C++, caption={Domain example}]
+int divide(int x, int y) {
+    if (y == 0) {
+	// handle bad argument
+    }
+
+    return x / y;
+}
+\end{lstlisting}
+
+However, by doing such thing, the the arguments lose its similarity with domain.  The arguments explicitly states that arguments can be any int, yet it reacts badly to 0, which is a perfectly valid int value.  Additionally, it does not respond well when the function can theoretically accept more than one types.  Because of the reasons stated above, I felt that there should be a brand new types to accomodate these flaws.
