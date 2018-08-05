@@ -1,0 +1,98 @@
+\section{Requirements}
+
+\subsection{Domain}
+
+After I spent several days learning about Ruby, I have began working on projects I was required to do for the internship.
+
+Because I was interested in developing programming language in the future, I eventually decided to work on a type checking concept I have been thinking about for a long time.  This type checking system is based on the mathematical concept of domain.  In mathematics, domain is a set of values the function can properly map.  In other words, if the value is part of a domain's set, then the function can use that value.
+
+\begin{gather*}
+let A = \{ x \mid x \in \mathbb{Z}, x \ne 0 \} \\
+f: A \to \mathbb{Z}
+\end{gather*}
+
+Since the function in computer science is similar to the functions in mathematics (hence the same name), it is not far-fetched to think that domains in mathematics can also be applied to the functions in computer science.  With this in mind, take a look at functions in statically typed languages:
+
+\begin{lstlisting}[language=C++, caption={Domain example}]
+int func(int x, int y) {
+    return x + y;
+}
+\end{lstlisting}
+
+Notice how the arguments are restricted.  Both arguments x and y require the int type.  This can be interpreted as a form of domain, as it restricts the input to certain set of values.  It is also the set of values the function is expected to work. which matches the definition of the domain nicely.  Although the functions in statically typed languages contain similar quality as domains in mathematics, it is not very flexible.  The arguments can only restrict based on the types of the value, even though there can be multiple ways to restrict them.  For example, what if you needed a value that is specifically a String that contains an integer?  What if the function should only accept values from 0 to 500?  It is possible to impose such rules using if statements within function:
+
+\begin{lstlisting}[language=C++, caption={Domain example}]
+int divide(int x, int y) {
+    if (y == 0) {
+	// handle bad argument
+    }
+
+    return x / y;
+}
+\end{lstlisting}
+
+However, by doing such thing, the the arguments lose its similarity with domain.  The arguments explicitly states that arguments can be any int, yet it reacts badly to 0, which is a perfectly valid int value.  Additionally, it does not respond well when the function can theoretically accept more than one types.  Because of the reasons stated above, I felt that there should be a brand new types to accomodate these flaws.  The pseudocode for the domain looks like the following:
+
+\begin{lstlisting}[language=Python, caption={Domain pseudocode}]
+# pseudocode in Python-like syntax
+domain non_zero_int: 
+    y = lambda a: a != 0
+    rule(integer, y)
+\end{lstlisting}
+
+In this implementation of domain, a domain is declared like a class.  The domain then creates a scope inside, which is intended to allow programmers to write rules for that domain.  This domain will allow programmers to flexibly define the domains for the functions.  The domains can then be used wherever types are appropriate.
+
+\begin{lstlisting}[language=Python, caption={Domain pseudocode}]
+# pseudocode in Python-like syntax
+def f(int x, non_zero_int y):
+    return x / y
+\end{lstlisting}
+
+\subsection{Features}
+
+Once I had a solid understanding of what exactly a domain is, I began jotting down ideas for what to implement.  After few days of brainstorming, I have decided on six major features domains should have, which are declaration of domain, assignment of signatures, declaration of variables, combination of domains, implicit conversions, and type checking at compile time.
+
+Declaration fo domains is straight forward.  In order to use the domain, one must be able to declare and define it.  The ideal syntax should be something similar to the pseudocode given above.  The domain should create its own scope of rules, and the syntax for rules should be intuitive and only take the domain to enforce the rules on and a function that determines if the object is valid.
+
+Assignment of signatures is essentially what statically typed languages do.  It restricts the argument and the return value the function can receive.  This allows programmers to have more type security in the codes like the statically typed languages, while also giving the programmers more freedom on the type of arguments the functions should have.
+
+Declaration of variable restricts the variables like the variables in statically typed languages:
+
+\begin{lstlisting}[language=Python, caption={Domain pseudocode}]
+# pseudocode in Python-like syntax
+non_zero_int x
+
+x = 500		# no error
+x = 3000	# no error
+x = 0		# error
+\end{lstlisting}
+
+Having this feature should make it easier for the program to type check, because it would understand the domain of the object before runtime and detect some errors this way.
+
+Combination of domain is exactly as it says.  Since domain is a set of values in mathematics, domain in computer science should also be able to combine through set operations such as union, intersection, and difference
+\begin{equation}
+\begin{aligned}
+let A = \mathbb{R} \cup \mathbb{Z}\\
+B = \mathbb{R} \cap \mathbb{Z}\\
+C = \mathbb{R} \setminus \mathbb{Z}
+\end{aligned}
+\end{equation}
+
+In this case, A should accept a value that is either a real number or integer, B should accept a value that is both a real number and an integer, C should accept a real number that is not an integer.  With this kind of feature, it will make some domains very trivial to define.  Credit card number, for example, is a great example to use the set operation on.  Credit card numbers should be stored in a string format because although credit card numbers are integers, they do not require any arithmetic operations performed on them, and 16 digit numbers has a chance of overflowing on int with low bit counts.  However, you should also not be able to store every string in as credit card number.  Credit card should always be a number, and any other string should be rejected.  In this case, you can easily define such domain by making an intersection between integer and string like so: $CreditCardNumber = Integer \cap String$.
+
+Implicit conversion is another feature domains should have.  Because domains can hold more than one types, there must be a way to convert between all types domains can represent.  For example, if the domain CreditCardNumber is an intersection between Integer and String, then it should theoretically respond to both Integer command (such as absolute value) and String command (such as length).  For this to happen, there should be a way to translate between Integer and String.
+
+\begin{lstlisting}[language=Python, caption={Domain pseudocode}]
+domain CreditCardNumber:
+    A = Integer & String
+    rule(A, lambda x: true)
+    
+    translation(Integer, String, lambda x: str(x))
+    translation(String, Integer, lambda x: int(x))
+\end{lstlisting}
+
+With addition of translation rules, the value stored in CreditCardNumber domain can translate between Integer and String at will, and the domain will be able to automatically translate and use the correct type when necessary.
+
+Finally, type checking at compile time should be the last feature domains should have.  Because many of the type errors caught in the statically typed languages are on compile time, in order to compete with such powerful feature, domain should also be able to type check to some extent at compile time.
+
+After all the features have been fleshed out, I began developing the project using Ruby.
