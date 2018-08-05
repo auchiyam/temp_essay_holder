@@ -1,0 +1,84 @@
+\section{Development}
+
+\subsection{Introduction}
+In this section, I will discuss the development process of the domain project.  There will be six sections, each exploring the six main features established in the requirement section, which are declaration of domains, assignment of signatures to function/methods, declaration of variables, combination of domains, implicit conversions of variables, and type checking at compile time. 
+
+\subsection{Declaration of domains}
+The first method I have implemented was declaration of domains.  The simplified implementation is as follows:
+
+\begin{lstlisting}
+module DomainCreate
+    include DomainErrors
+    extend self
+    # Given a block of rules and optionally a compound rule, create_domain create an anonymous class
+    # that is based on the template
+    def create_domain(compound: 0, name: "")
+        if !block_given? && compound == 0
+            raise ArgumentError.new "No block of rules were given.  There must be at least one rule for the domain"
+        end
+
+        # create a new class
+        cl = Class.new do
+            extend DomainClass   
+            include DomainClass
+        end
+
+        # prevents override of domain_created when nested.  Returns the @domain_created to the previous one after everything is done
+        prev = @domain_created
+
+        # set the domain that is currently being created
+        @domain_created = cl
+
+        # Initialization
+        # set the compound_domain to the specified one if it has any, else assign itself as compound domain
+        @domain_created.compound_domain = unless compound == 0 then compound else @domain_created end
+        @domain_created.rules = {}
+        @domain_created.translators = {}
+        @domain_created.default = nil
+        @domain_created.translation_map = {}
+
+        # Read blocks for the rules and other initialization
+        yield if block_given?
+        
+        @domain_created.translators.each_key do |key|
+            d_in, d_out = key
+
+            if !@domain_created.translation_map.has_key? d_in
+                @domain_created.translation_map[d_in] = []
+            end
+
+            @domain_created.translation_map[d_in] << d_out
+        end
+
+        # since setup that takes place outside of this scope is done, revert it to the original
+        @domain_created = prev
+
+        
+
+        # generate all the "to_<Domain>" methods based on the translators
+        cl.send :generate_translators
+
+        # If the name was provided, create the constant with that name
+        if not name.empty?
+            if self.inspect == 'main'
+                Object.const_set(name, cl)
+            else
+                self.const_set(name, cl)
+            end
+        # else, the domain should be anonymous
+        else
+            return cl
+        end
+
+    end
+end
+\end{lstlisting}
+\subsection{Assignment of signatures to function/methods}
+
+\subsection{Declaration of variables}
+
+\subsection{Combination of domains}
+
+\subsection{Implicit conversion of variables}
+
+\subsection{Type Checking at Compile Time}
