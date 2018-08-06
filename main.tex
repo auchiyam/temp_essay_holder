@@ -7,6 +7,8 @@
 \usepackage{graphicx}
 \usepackage{amssymb}
 \usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{indentfirst}
 
 \newcommand{\HRule}[1]{\rule{\linewidth}{#1}} 	% Horizontal rule
 
@@ -57,23 +59,27 @@
 }
  
 \lstset{style=mystyle}
-
 \graphicspath{ {./images/} }
+\setlength{\parskip}{1em}
 
 \begin{document}
 
-\thispagestyle{empty}		% Remove page numbering on this page
+\thispagestyle{empty}
 
-\printtitle					% Print the title data as defined above
+\printtitle
 \vfill
-\printauthor				% Print the author data as defined above
+\printauthor
+\newpage
+
+\tableofcontents
+
 \newpage
 
 \setcounter{page}{1}
 
 \input{introduction.tex}
+\input{learn.tex}
 \input{requirement.tex}
 \input{development.tex}
-\input{test_maintenance.tex}
 \input{conclusion.tex}
 \end{document}
