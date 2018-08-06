@@ -556,7 +556,7 @@ line_trace = TracePoint.trace(:line) do |tp|
 end
 \end{lstlisting}
 
-Now that the basic flow of the wrap method is done, it is time to discuss why everything occurs within the return\_trace and line\_trace.  In Ruby, there are methods called method hook.  Method hook methods are basically methods that gets called when certain type of action gets performed.  For example, method\_missing defined in the class is called whenever the program tries to call a method that does not exist.  By overriding this method, it is possible to allow programs to respond to such command:
+Now that the basic flow of the wrap method is done, it is time to discuss why everything occurs within the return\_trace and line\_trace.  In Ruby, there are methods called hook methods.  Hook methods are basically methods that gets called when certain type of action gets performed.  For example, method\_missing defined in the class is called whenever the program tries to call a method that does not exist.  By overriding this method, it is possible to allow programs to respond to such command:
 
 \begin{lstlisting}[caption={method\_missing example}]
 class T
@@ -570,7 +570,7 @@ a.test				#Test was called
 a.new_method			#new_method was called
 \end{lstlisting}
 
-It is a powerful tool to allow programmers to create complex programs that update itself.  In my case, there is a relevant method hook named method\_added, that gets called after the method has been added.  However, because anyone can override the method\_added method, it would be highly risky to override it in the library for the wrapping.  Instead, I decided to use the tracepoints to wait for the method\_added to be ran, then insert its code at the end of the method\_added.  This way, other programmers can override the method\_added method however they want to and TracePoint would always run the wrapping method regardless of the content.
+It is a powerful tool to allow programmers to create complex programs that update itself.  In my case, there is a relevant hook method named method\_added, that gets called after the method has been added.  However, because anyone can override the method\_added method, it would be highly risky to override it in the library for the wrapping.  Instead, I decided to use the tracepoints to wait for the method\_added to be ran, then insert its code at the end of the method\_added.  This way, other programmers can override the method\_added method however they want to and TracePoint would always run the wrapping method regardless of the content.
 
 line\_trace, on the other hand, makes sure the method\_added was called as soon as the signature was given.  This is to prevent people from writing random codes between the signature and the method, so that it's obvious which method the signature is binding:
 

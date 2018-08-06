@@ -19,7 +19,7 @@ int func(int x, int y) {
 }
 \end{lstlisting}
 
-Notice how the arguments are restricted.  Both arguments x and y require the int type.  This can be interpreted as a form of domain, as it restricts the input to certain set of values.  It is also the set of values the function is expected to work. which matches the definition of the domain nicely.  Although the functions in statically typed languages contain similar quality as domains in mathematics, it is not very flexible.  The arguments can only restrict based on the types of the value, even though there can be multiple ways to restrict them.  For example, what if you needed a value that is specifically a String that contains an integer?  What if the function should only accept values from 0 to 500?  It is possible to impose such rules using if statements within function:
+Notice how the arguments are restricted.  Both arguments x and y require the int type.  This can be interpreted as a form of domain, as it restricts the input to certain set of values.  It is also the set of values the function is expected to work, which matches the definition of the domain nicely.  Although the functions in statically typed languages contain similar quality as domains in mathematics, it is not very flexible.  The arguments can only restrict based on the types of the value, even though there can be multiple ways to restrict them.  For example, what if you needed a value that is specifically a String that contains an integer?  What if the function should only accept values from 0 to 500?  It is possible to impose such rules using if statements within function:
 
 \begin{lstlisting}[language=C++, caption={Domain example}]
 int divide(int x, int y) {
@@ -31,7 +31,7 @@ int divide(int x, int y) {
 }
 \end{lstlisting}
 
-However, by doing such thing, the the arguments lose its similarity with domain.  The arguments explicitly states that arguments can be any int, yet it reacts badly to 0, which is a perfectly valid int value.  Additionally, it does not respond well when the function can theoretically accept more than one types.  Because of the reasons stated above, I felt that there should be a brand new types to accomodate these flaws.  The pseudocode for the domain looks like the following:
+However, by doing such thing, the arguments lose its similarity with domain.  The arguments explicitly states that arguments can be any int, yet it reacts badly to 0, which is a perfectly valid int value.  Additionally, it does not respond well when the function can theoretically accept more than one types.  Because of the reasons stated above, I felt that there should be a brand new types to accomodate these flaws.  The pseudocode for the domain looks like the following:
 
 \begin{lstlisting}[language=Python, caption={Domain pseudocode}]
 # pseudocode in Python-like syntax
@@ -52,7 +52,7 @@ def f(int x, non_zero_int y):
 
 Once I had a solid understanding of what exactly a domain is, I began jotting down ideas for what to implement.  After few days of brainstorming, I have decided on six major features domains should have, which are declaration of domain, assignment of signatures, declaration of variables, combination of domains, implicit conversions, and type checking at compile time.
 
-Declaration fo domains is straight forward.  In order to use the domain, one must be able to declare and define it.  The ideal syntax should be something similar to the pseudocode given above.  The domain should create its own scope of rules, and the syntax for rules should be intuitive and only take the domain to enforce the rules on and a function that determines if the object is valid.
+Declaration of domains is straight forward.  In order to use the domain, one must be able to declare and define it.  The ideal syntax should be something similar to the pseudocode given above.  The domain should create its own scope of rules, and the syntax for rules should be intuitive and only take the domain to enforce the rules on and a function that determines if the object is valid.
 
 Assignment of signatures is essentially what statically typed languages do.  It restricts the argument and the return value the function can receive.  This allows programmers to have more type security in the codes like the statically typed languages, while also giving the programmers more freedom on the type of arguments the functions should have.
 
