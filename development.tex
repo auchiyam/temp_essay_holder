@@ -412,7 +412,7 @@ return_trace = TracePoint.new(:return) do |tp|
 end
 \end{lstlisting}
 
-The second step in wrapping method is to determine if the method given has the right argument at the right area:
+The second step in wrapping method, after the string have been parsed,  is to determine if the method given has the right argument at the right area:
 
 \begin{lstlisting}[caption={Example: wrapper method}]
 # error, first argument should be required, and second should be optional
@@ -428,7 +428,7 @@ end
 
 As evident by this example, the first method f does not follow the rules provided.  The signature stated that the first argument is required while second argument is optional, yet the f provides the opposite.  Additionally, there can be too much or too little arguments on f that would break the rule.  To prevent this type of rule breaking, this part of wrapper goes through all the parameters of the method and the rules for the argument and check if they match.
 
-\begin{lstlisting}
+\begin{lstlisting}[caption={wrap the method with checks and replace it}]
 return_trace = TracePoint.new(:return) do |tp|
     # ...
     # wrap the method
@@ -484,33 +484,154 @@ end
 
 \end{lstlisting}
 
-\subsection{Declaration of variables}
+Next, the wrapper creates an anonymous function that overrides the original method with a new method that checks the validity of argument and return values.  Once the method is wrapped, the method will always go through the checks before and after the method runs to make sure everything is accurate.
 
-\begin{lstlisting}[caption={Method for calling define initializer correctly}]
-def create_initializer(a, domain)
-    line = 0
-
-    tp = TracePoint.trace(:line) do |x|
-        line += 1
-
-        if line == 2
-            bind = x.binding
-
-            if x.self.inspect != "main"
-                x.self.class_eval do
-                    DomainCreate::define_initializer a, domain
-                end
-            else
-                Object.class_eval do
-                    DomainCreate::define_initializer a, domain
-                end
+\begin{lstlisting}[caption={Wrapper method: Add it to the correct place with the right scope}]
+return_trace = TracePoint.new(:return) do |tp|
+    # ...
+    trace = TracePoint.trace(:line) do |tp|
+        tp.disable
+        # create the newly defined method in the appropriate places
+        if self.inspect == 'main'
+            Object.class_eval do
+                Object.alias_method(old_method_name, method_name)
+                lamb.call
+                private method_name, old_method_name
             end
+        else
+            self.class_eval do
+                self.alias_method(old_method_name, method_name)
+                private old_method_name
+                pr = tp_self.private_methods(false).include?(method_name)
+                lamb.call
+                private method_name if pr
+            end
+        end            
+    end
+end
 
-            x.disable
+\end{lstlisting}
+
+Next, we make sure the method is added to the correct place.  If the method is created on main, or top level, then internally, it is the same as creating a private method in Object class in Ruby, so it does exactly that.  Otherwise, it should be in some kind of class, so it performs the action on the self variable, which should hold the class information.  It is also important to figure out the encapsulation this method is intended to be, because the new method will always be public other wise.  There are 3 ways to make the method private:
+
+\begin{lstlisting}[caption={Private methods}]
+# 1. Everything after this private keyword is considered private
+private
+def f; end 		# private
+def g; end 		# private
+
+# 2. Appending private to the front makes only this method private
+private def f; end 	# private
+def g; end		# not private
+
+# 3. You can write the name of the function to privatize after the method has been created
+def f; end
+def g; end
+
+private :f		# f() is now private
+\end{lstlisting}
+
+Making methods private on 2 and 3 is trivial.  2 turns method into private right after the method is created, and since the wrap method activates right before the method is fully added, the private keyword turns the new, wrapped method into private instead.  3 turns the method into private the moment the ``private :name'' line runs, which is long after the new method has been replaced, so the new method turns into private.  The first one, however, is a challenge.  Although I could not figure out exactly when the function turns private, the method did not automatically turn private, which indicates that the private keyword transforms the method before it finishes adding the value, which the wrap method overrides into public.  So my next step was to create a TracePoint for line that waits a single line.  By waiting a single line, the instruction pointer moved outside the scope of the wrapper function, which is after the old method has been properly added.  The algorithm then checks if the old method was added as a private method, and turn it into private if it was the case.  By doing so, I managed to account for all three different ways to make the method private.
+
+\begin{lstlisting}[caption={The other TracePoints}]
+return_trace = TracePoint.new(:return) do |tp|
+    # ...
+end
+
+line_trace = TracePoint.trace(:line) do |tp|
+    line += 1
+
+    if line == 1
+        local_binding = tp.binding
+    end
+
+    if line == 2
+        if tp.method_id != :method_added && tp.method_id !=:singleton_method_added
+            raise NoMethodAddedError.new "No new method has been defined for signature '#{signature}'"
         end
+
+        return_trace.enable
+        tp.disable
     end
 end
 \end{lstlisting}
+
+Now that the basic flow of the wrap method is done, it is time to discuss why everything occurs within the return\_trace and line\_trace.  In Ruby, there are methods called method hook.  Method hook methods are basically methods that gets called when certain type of action gets performed.  For example, method\_missing defined in the class is called whenever the program tries to call a method that does not exist.  By overriding this method, it is possible to allow programs to respond to such command:
+
+\begin{lstlisting}[caption={method\_missing example}]
+class T
+    def self.method_missing(m)
+    	puts "#{m} was called"
+    end
+end
+
+a = T.new
+a.test				#Test was called
+a.new_method			#new_method was called
+\end{lstlisting}
+
+It is a powerful tool to allow programmers to create complex programs that update itself.  In my case, there is a relevant method hook named method\_added, that gets called after the method has been added.  However, because anyone can override the method\_added method, it would be highly risky to override it in the library for the wrapping.  Instead, I decided to use the tracepoints to wait for the method\_added to be ran, then insert its code at the end of the method\_added.  This way, other programmers can override the method\_added method however they want to and TracePoint would always run the wrapping method regardless of the content.
+
+line\_trace, on the other hand, makes sure the method\_added was called as soon as the signature was given.  This is to prevent people from writing random codes between the signature and the method, so that it's obvious which method the signature is binding:
+
+\begin{lstlisting}[caption={Error example}]
+# ok
+domain 'Integer -> String'
+def f(x)
+    "hello"
+end
+
+# error, something is between method and signature
+domain 'Integer -> nil'
+x = 5
+def g(x); end
+\end{lstlisting}
+
+Through these long string of codes, the programmer can write signatures for the function
+
+\begin{lstlisting}[caption={Signature demo}]
+# create a signature using domain method
+domain 'Integer -> Integer'
+def f(x)
+    5 * x
+end
+
+# It is also possible to use all 7 different types of arguments in Ruby without any problem.  &block variables are ignored in the signature
+domain 'Integer, $Integer, *Integer, key1: Integer, key2: $Integer, **Integer -> Integer'
+def g(a, b = 1, *c, key1:, key2: 2, **key3, &block)
+    a + b
+end
+
+# There are two keywords in signature as of now, %any% and nil.  %any% accepts any value, while nil is when there are no argument or return value
+domain '%any% -> nil'
+def h(a); end
+\end{lstlisting}
+
+\subsection{Declaration of variables}
+
+Simulating the declaration of variables is possible to some extent by creating an instance of the domain:
+
+\begin{lstlisting}[caption={declaration of variables example}]
+
+x = CreditCardNumber.new
+
+x.value = "1000200030004000"	# ok
+x.value = "test"		# error
+
+\end{lstlisting}
+
+However, there are few minor problems that rises from doing such thing.  One of them is that the value of x can easily be replaced if you assign another value without using the x.value command, and another is that although it is fine as a proof of concept, having to type .value everytime feels very tedious.  So instead of having to do all that, the code should ideally look something like this:
+
+\begin{lstlisting}[caption={declaration of variables example}]
+
+CreditCardNumber :x
+
+x = "1000200030004000"		# ok
+x = "test"			# error
+
+\end{lstlisting}
+
+The code looks simpler than the previous code, and it also resembles the declaration of varibles in the statically typed languages.  To imititate such feature, I made the define\_initializer
 
 \begin{lstlisting}[caption={Method for defining the initializer method}]
 def define_initializer(a, domain)
@@ -553,7 +674,6 @@ def define_initializer(a, domain)
             layer += 1
         end
 
-
         return_trace = TracePoint.trace(:return) do |x|
             layer -= 1
 
@@ -575,8 +695,290 @@ def define_initializer(a, domain)
     end
 end
 \end{lstlisting}
+
+This method creates a method with the same name as the domain that can initialize a variable.  The method takes in the variable name you want to restrict, and create four TracePoints, each triggered at different point in code.
+
+First, the line\_trace.  This TracePoint activates itself on every line to check if the variable has been changed.  The variable check is done through checking the object\_id of the variable.  If the object\_id is different from the previous line, then the new value assigned to the variable is checked using the domain the initializer is associated with.  If the value passed the test, then the value is assigned to the variable without any trouble, and the object\_id is updated.  If the value did not pass the test, then the method raises an error stating that the value is outside of the domain.
+
+Because checking every single line in the code will be a huge overhead, there must be ways to pause the TracePoint when it is not being used.  The variable is typically not in use when another method gets called, so the call\_trace and return\_trace is there to control the line\_trace.  The call\_trace will be activated whenever the program call a method.  Because the calling the method moves the scope outside of where the initialized variable is effective, the call\_trace disables the line\_trace and increment the local variable layer by one.  Once a method finish and the method returns, the return\_trace will be activated.  The return\_trace will decrement the layer the call\_trace incremented to indicate that it is one method closer to the original scope.  If the layer becomes 0, then the scope has successfully returned to the original scope, so line\_trace is enabled.  If the layer reaches -1, then that means that the method this variable is defined on has finished.  At this point, none of the TracePoints will be useful, so all three TracePoint will be disabled, and the line checking will not happen again.
+
+bind\_trace is a simple TracePoint that waits for the initializer method to end, then it grabs a binding from the scope the variable is from.  This is to let line\_trace figure out the status of the variable the initializer is tracking.
+
+Because this can be difficult to visualize, consider the following code:
+
+\begin{lstlisting}[caption={Declaration of domain: demo}]
+def f
+    CreditCardNumber :x
+
+    x = "1000200030004000"
+
+    bar
+
+    x = "5000600070008000"
+end
+
+def bar
+    x = 500
+    foo
+end
+
+def foo; end
+\end{lstlisting}
+
+The code executes in the following order:
+
+\begin{enumerate}[noitemsep]
+\item line 2: Creates the three tracepoints
+\item line 4: Assign value to x
+\item line\_trace: Check the value of x, the value passes the test
+\item line 6: run bar()
+\item call\_trace: Increment layer, disable line\_trace, layer = 1
+\item line 12: Assigns value to x.  line\_trace is disabled, so it is ignored
+\item line 13: run foo()
+\item call\_trace: Increment layer, layer = 2
+\item line 16: exit foo()
+\item return\_trace: Decrement layer, layer = 1
+\item line 14: exit bar()
+\item return\_trace: Decrement layer, layer = 0, enable line\_trace because layer equals 0
+\item line 8: Assign value to x
+\item line\_trace: Check the value of x, the value passes test
+\item line 9: exit f()
+\item return\_trace: Decrement layer, layer = -1, disable all TracePoint because layer equals -1
+\end{enumerate}
+
 \subsection{Combination of domains}
+
+Combination of domains was simple feature to implement.
+
+\begin{lstlisting}[caption={Compound Domain class}]
+class CompoundDomain
+    def initialize(left, operand, right)
+        @left = left
+        @operand = operand
+        @right = right
+    end
+    
+    def value?(x)
+        l = @left.value?(x)
+        r = @right.value?(x)
+
+        case @operand
+        when :+
+            return l || r
+        when :&
+            return l && r
+        when :-
+            return l && (not r)
+        else
+            raise ArgumentError.new "Invalid operation.  #{@operand} is not a valid operation"
+        end
+    end
+    
+    def rules
+        return { left: @left.rules, operand: @operand, right: @right.rules }
+    end
+    
+    def translators
+        return { left: @left.translators, operand: @operand, right: @right.translators }
+    end
+end
+\end{lstlisting}
+
+The domain that are created after the set operators are replaced with this CompoundDomain class.  The CompoundDomain class overrides 3 methods, which are value?, rules, and translators.  The value? method will execute the value? method for both left and right side of the operand to determine if the argument is valid for these two domains.  Then, it performs boolean operation based on the operand that is passed in at the initialization process.  Because CompoundDomain is shaped like a binary tree, recursively calling value? will traverse all checks that are part of the CompoundDomain's tree of rules, and successfully determine the correct answer.  The rules and translators override is mostly for debugging process.  It returns all rules or translators that are used by CompoundDomain.
 
 \subsection{Implicit conversion of variables}
 
+There are two instances of implicit conversions Ruby do, which are implicit conversion methods and coercing/try\_conversion.  The implicit conversion methods are called by Ruby whenever the variable should act like another variable.  For example, to\_str is called automatically when you try to use non{-}string classes on something that expects a string value, such as interpolation.  Coercing and try\_conversion are also another way Ruby converts object into a more convenient object.  Coerce is used in mathematical operations such as addition.  Whenever Ruby finds a non{-}numerical value on the right side of the operation, it calls coerce method on the right side, which determines how Ruby should move forward with the operation.  Similarly, try\_convert is called when values need to be different type to be proceed.  The implicit conversion method is called within the try\_convert method.
+
+\begin{lstlisting}[caption={Implicit conversion: implicit conversion methods}]
+def generate_translators
+    output = [default] + (translators.keys.map { |x| x[1] }) if !default.nil?
+    output = (translators.keys.map { |x| x[1] }) if default.nil?
+    output.uniq.each do |out|
+        converters = [Array, Hash, Integer, IO, Proc, Regexp, String]
+
+        if converters.include? out
+            a = "ary"       if out == Array
+            a = "hash"      if out == Hash
+            a = "int"       if out == Integer
+            a = "io"        if out == IO
+            a = "proc"      if out == Proc
+            a = "regexp"    if out == Regexp
+            a = "str"       if out == String
+                
+            define_method "to_#{a}" do
+                if @value.class == self.class
+                    return @value.send "to_#{a}"
+                end
+
+                val = self.class.send :translate, @value.class, out, @value
+
+                val
+            end
+        end
+
+        define_method "to_#{out.name}" do
+            if @value.class == self.class
+                return @value.send "to_#{out.name}"
+            end
+
+            val = self.class.send :translate, @value.class, out, @value
+
+            val
+        end
+    end
+
+    numerals = [Float, Integer]
+    numeral_output = numerals & output
+
+    define_method :coerce do |other|
+        return [other, self.value(numeral_output[0])] if !numeral_output.empty?
+
+        nil
+    end
+end
+\end{lstlisting}
+
+The generate\_translators generate every implicit conversion methods the Ruby naturally support that applies to the domain.  The implicit conversion methods defined is based on the output types of every translations that are provided in the declaration of domain.  Additionally, coerce method is defined based on possible numerical translations the domains have.  If there are ways to translate into a numerical value, then coerce is defined based on such translations.
+
+With this generator method, Ruby can convert implicitly on many occasions:
+
+\begin{lstlisting}[caption={Implicit conversion demo}]
+
+domain :Int do
+    rule(Integer)
+    rule(String) { |x| is_integer?(x) }
+
+    translation(Integer, String) { |x| x.to_s }
+    translation(String, Integer) { |x| Integer(x) }
+    translation(Integer, Array) { |x| [x, x, x] }
+end
+
+Int :x
+
+x = "500"
+
+puts 200 + x		# converts String to Integer implicitly
+a, b, c = x		# converts String to Integer, then Integer to Array implicitly
+\end{lstlisting}
+
+\begin{lstlisting}[caption={Implicit conversion: method\_missing}]
+def method_missing(name, *args, &blocks)
+    cl = self.class
+    output = [default] + (cl.translators.keys.map { |x| x[1] }) if !default.nil?
+    output = (cl.translators.keys.map { |x| x[1] }) if default.nil?
+
+    result = nil
+
+    binary_operations = %i[% & * ** + - / < << <= <=> == > >= >> ^]
+
+    output.each do |x|
+        # grab all methods it responds to
+        meth = x.methods
+
+        # If the output can respond to the value
+        if meth.include? name
+            if binary_operations.include? name
+                value = self.value(x)                    
+                begin
+                    result = instance_eval("#{value} #{name} #{args[0]}")
+                rescue TypeError, ArgumentError
+                    next
+                end
+            else
+                value = self.value(x)
+                begin
+                    result = value.call(name, *args) { blocks.call } if !blocks.nil?
+                    result = value.call(name, *args) if blocks.nil?
+                rescue TypeError, ArgumentError
+                    next
+                end
+            end
+        end
+    end
+
+    return result if !result.nil?
+
+    super
+end
+\end{lstlisting}
+
+The next step is to allow implicit conversion based on what methods the output class can respond to.  By overriding the method\_missing method, I made the domains respond to the missing methods.  It checks if that method exists in any possible output translation.  If it does, it translates the value into the correct value then tries to run that method.  If the method returns error, then it continues searching.  Otherwise, the result is returned as if the domain had that method all along.  If it failed to find the method in any of the outputs, then error is raised as missing method.
+
+\begin{lstlisting}[caption={Implicit conversion: translation}]
+def translate(d_in, d_out, value)
+    if d_in == d_out
+        return value
+    end
+
+    route = get_path(d_in, d_out)
+    route = fix_path(route)
+    val = value
+
+    route.each do |path|
+        val = translators[path].call(val) if (!translators[path].nil? && !val.nil?)
+    end
+
+    val
+end
+
+def get_path(src, dest)
+    checked = []
+    queue = [[src]]
+    found = false
+
+    while !queue.empty? && !found
+        head = queue[0][-1]
+        if head == dest
+            found = true
+        else
+            queue.shift
+        end
+
+        if !checked.include?(head) && !found
+            checked << head
+
+            # get all paths not checked
+            neighbors = @translation_map[head] - checked
+
+            if !neighbors.empty?
+                path = [head]
+                neighbors.each do |n|
+                    queue << path + [n]
+                end
+            end
+        end
+    end
+
+    queue[0]
+end
+
+def fix_path(path)
+    prev = nil
+    curr = nil
+    fixed = []
+
+    path.each do |x|
+        if curr.nil?
+            curr = x
+        else
+            prev = curr
+            curr = x
+        end
+
+        if !prev.nil?
+            fixed << [prev, curr]
+        end
+    end
+
+    fixed
+end
+\end{lstlisting}
+
+Now that the implicit conversion algorithms are clear, we will examine how the values are translated.  Notice in the first example given, the value translated from String to Array successfully, despite the lack of translation rules that directly link the two together.  This is done by first mapping the translation rules into a graph.  Using the breadth first search algorithm, the algorithm traverses the map to find the shortest path from source type to desired type.  After the route has been figured out, the fix\_path method takes the array of types list of input{-}output pairs.  This array is then used to finally translate the value into the desired output.
+
 \subsection{Type Checking at Compile Time}
+
+Unfortunately, I could not implement the type checking system that runs on compile time during my time at Aoyama Gakuin University. There are several ideas I had about how to implement them, such as creating a brand new interpreter that checks the types before running, or using the extended hook method to run a check of the whole program before the script actually runs to imitate compile time checking, but both of the ideas require extensive programming to make something effective.  Due to the two months time limit, I have decided to not implement them during this internship.  
+
+Although I was unable to implement this feature, I believe that the library does a very good job being an proof of concept for the domain to demonstrate how they work.  Compile time type checking is passive feature that does not require the programmer's participation, while the remaining features are something programmers actively use, so the actual feel of the domain should be similar to how it would look like in a real life situation.
